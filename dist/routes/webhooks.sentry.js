@@ -1,16 +1,15 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sentryRouter = void 0;
 const express_1 = require("express");
 const store_1 = require("../store");
 const env_1 = require("../env");
-exports.sentryRouter = (0, express_1.Router)();
+const sentryRouter = (0, express_1.Router)();
 function verify(req) {
     if (!env_1.env.SENTRY_WEBHOOK_SECRET)
         return true; // skip if not set
     return req.get("Sentry-Hook-Signature") === env_1.env.SENTRY_WEBHOOK_SECRET;
 }
-exports.sentryRouter.post("/", (req, res) => {
+sentryRouter.post("/", (req, res) => {
     if (!verify(req))
         return res.status(401).send("bad signature");
     const body = req.body || {};
@@ -27,7 +26,9 @@ exports.sentryRouter.post("/", (req, res) => {
         project: String(project),
         kind: String(kind),
         title: String(title),
-        url
+        url,
+        details: body
     });
     res.json({ ok: true });
 });
+exports.default = sentryRouter;

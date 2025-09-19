@@ -46,7 +46,7 @@ const initSlack = (app) => {
         receiver
     });
     const openai = new openai_1.default({ apiKey: env_1.env.OPENAI_API_KEY });
-    slack.command("/sentry-summary", async ({ ack, respond, command }) => {
+    slack.command("/oncall", async ({ ack, respond, command }) => {
         await ack();
         const text = (command.text || "").trim().toLowerCase();
         const minutes = parseSinceToMinutes(text, 120);
