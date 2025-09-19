@@ -6,10 +6,9 @@
   "license": "MIT",
   "type": "commonjs",
   "scripts": {
-    "dev:local": "nodemon --watch src --exec ts-node src/index.ts",
-    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts"
   },
   "dependencies": {
     "@slack/bolt": "^4.4.0",
