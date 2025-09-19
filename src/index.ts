@@ -22,3 +22,5 @@ app.get("/healthz", (_req, res) => res.send("ok"));
 app.listen(env.PORT, () => {
   console.log(`Server listening on :${env.PORT}`);
 });
+
+export { app };
