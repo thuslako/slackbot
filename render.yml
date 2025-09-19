@@ -19,13 +19,3 @@ services:
         value: production
       - key: PORT
         value: 10000 # Render will override this; safe default
-      - key: SLACK_BOT_TOKEN
-        fromSecret: slack-bot-token
-      - key: SLACK_SIGNING_SECRET
-        fromSecret: slack-signing-secret
-      - key: OPENAI_API_KEY
-        fromSecret: openai-api-key
-      - key: SENTRY_WEBHOOK_SECRET
-        fromSecret: sentry-webhook-secret
-      - key: GITLAB_WEBHOOK_SECRET
-        fromSecret: gitlab-webhook-secret
