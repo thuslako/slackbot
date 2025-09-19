@@ -26,7 +26,8 @@ sentryRouter.post("/", (req, res) => {
     project: String(project),
     kind: String(kind),
     title: String(title),
-    url
+    url,
+    details: body
   });
 
   res.json({ ok: true });

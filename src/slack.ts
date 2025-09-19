@@ -2,6 +2,7 @@ import { App, ExpressReceiver } from "@slack/bolt";
 import type { Express } from "express";
 import { env } from "./env";
 import { getEvents } from "./store";
+import type { SlackCommandMiddlewareArgs } from "@slack/bolt";
 import OpenAI from "openai";
 
 
@@ -57,7 +58,7 @@ const initSlack = (app: Express) => {
 
   const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
 
-  slack.command("/sentry-summary", async ({ ack, respond, command }) => {
+  slack.command("/oncall", async ({ ack, respond, command }:SlackCommandMiddlewareArgs) => {
     await ack();
     const text = (command.text || "").trim().toLowerCase();
     

@@ -40,7 +40,8 @@ gitlabRouter.post("/", (req, res) => {
     project: String(project),
     kind: String(kind || "event"),
     title: String(title),
-    url
+    url,
+    details: b
   });
 
   res.json({ ok: true });
