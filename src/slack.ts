@@ -74,18 +74,20 @@ const initSlack = (app: Express) => {
     ].join(" ");
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-5-mini",
+      model: "gpt-4.1-mini",
       temperature: 0.2,
       messages: [{ role: "user", content: prompt }]
     });
 
-    await respond(completion.choices[0]?.message?.content ?? "No summary.");
+    await slack.client.chat.postMessage({
+      channel: command.channel_id,
+      text: completion.choices[0]?.message?.content ?? "No summary."
+    });
   });
 
   // Mount Bolt’s Express app onto our server
   app.use(receiver.app);
 }
 
-
-export { initSlack }
+export default initSlack;
 
