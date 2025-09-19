@@ -39,15 +39,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 require("dotenv/config");
 const express_1 = __importStar(require("express"));
 const slack_1 = __importDefault(require("./slack"));
-const slack_2 = __importDefault(require("./slack"));
 const env_1 = require("./env");
 const app = (0, express_1.default)();
 app.use((0, express_1.json)());
 app.use((0, express_1.urlencoded)({ extended: true }));
-(0, slack_2.default)(app);
+(0, slack_1.default)(app);
 app.get("/healthz", (_req, res) => res.send("ok"));
-// Mount Bolt’s ExpressReceiver app → exposes /slack/events & /slack/interactive
-app.use(slack_1.default.app);
 app.listen(env_1.env.PORT, () => {
     console.log(`Listening on :${env_1.env.PORT}`);
 });

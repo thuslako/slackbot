@@ -1,6 +1,5 @@
 import "dotenv/config";
 import express, { json, urlencoded } from "express";
-import receiver from "./slack";
 import initSlack from "./slack";
 import { env } from "./env";
 
