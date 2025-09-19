@@ -12,9 +12,6 @@ initSlack(app);
 
 app.get("/healthz", (_req, res) => res.send("ok"));
 
-// Mount Bolt’s ExpressReceiver app → exposes /slack/events & /slack/interactive
-app.use(receiver.app);
-
 app.listen(env.PORT, () => {
   console.log(`Listening on :${env.PORT}`);
 });
