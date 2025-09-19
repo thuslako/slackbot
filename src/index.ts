@@ -6,12 +6,10 @@ import { gitlabRouter } from "./routes/webhooks.gitlab";
 import { env } from "./env";
 
 const app = express();
-app.use(json({ limit: "2mb" }));
-app.use(urlencoded({ extended: true }));
 
 // Webhooks
-app.use("/webhooks/sentry", sentryRouter);
-app.use("/webhooks/gitlab", gitlabRouter);
+app.use("/webhooks/sentry", sentryRouter, json(), urlencoded({ extended: true }));
+app.use("/webhooks/gitlab", gitlabRouter, json(), urlencoded({ extended: true }));
 
 initSlack(app);
 
