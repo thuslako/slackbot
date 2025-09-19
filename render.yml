@@ -8,10 +8,10 @@ services:
     nodeVersion: 20
     buildCommand: |
       corepack enable
-      corepack prepare pnpm@latest --activate
-      pnpm install --frozen-lockfile
-      pnpm build
-    startCommand: pnpm start
+      corepack prepare yarn@latest --activate
+      yarn install --frozen-lockfile
+      yarn build
+    startCommand: yarn start
     autoDeploy: true
     healthCheckPath: /healthz
     envVars:
