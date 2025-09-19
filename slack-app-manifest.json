@@ -1,0 +1,52 @@
+{
+  "_metadata": {
+    "major_version": 1
+  },
+  "display_information": {
+    "name": "On-call Summarizer",
+    "description": "Summarize Sentry + GitLab + Slack with AI"
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "On-call Summarizer",
+      "always_online": true
+    },
+    "slash_commands": [
+      {
+        "command": "/oncall",
+        "description": "Summarize recent incidents, tickets, MRs, and Slack messages from on-call with AI",
+        "usage_hint": "[since 30m|2h|1w|today|project:api]",
+        "should_escape": false
+      }
+    ]
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "chat:write",
+        "commands",
+        "channels:read",
+        "channels:history",
+        "groups:read",
+        "groups:history",
+        "im:history",
+        "mpim:history"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "request_url": "https://fullscript.enterprise.slack.com/slack/events",
+      "bot_events": [
+        "app_home_opened",
+        "message.channels"
+      ]
+    },
+    "interactivity": {
+      "is_enabled": true,
+      "request_url": "https://fullscript.enterprise.slack.com/slack/interactive"
+    },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": false
+  }
+}
