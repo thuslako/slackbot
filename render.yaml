@@ -9,7 +9,7 @@ services:
       corepack prepare yarn@latest --activate
       yarn install --frozen-lockfile
       yarn build
-    startCommand: yarn start
+    startCommand: node dist/index.js
     autoDeploy: true
     healthCheckPath: /healthz
     envVars:
