@@ -60,6 +60,7 @@ const initSlack = (app: Express) => {
 
   slack.command("/oncall", async ({ ack, respond, command }:SlackCommandMiddlewareArgs) => {
     await ack();
+
     const text = (command.text || "").trim().toLowerCase();
     
     const minutes = parseSinceToMinutes(text, 120);
@@ -80,8 +81,10 @@ const initSlack = (app: Express) => {
       messages: [{ role: "user", content: prompt }]
     });
 
+    const im = await slack.client.conversations.open({ users: command.user_id });
+    const dmChannel = im.channel?.id!;
     await slack.client.chat.postMessage({
-      channel: command.channel_id,
+      channel: dmChannel,
       text: completion.choices[0]?.message?.content ?? "No summary."
     });
   });

@@ -63,8 +63,10 @@ const initSlack = (app) => {
             temperature: 0.2,
             messages: [{ role: "user", content: prompt }]
         });
+        const im = await slack.client.conversations.open({ users: command.user_id });
+        const dmChannel = im.channel?.id;
         await slack.client.chat.postMessage({
-            channel: command.channel_id,
+            channel: dmChannel,
             text: completion.choices[0]?.message?.content ?? "No summary."
         });
     });
