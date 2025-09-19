@@ -46,3 +46,5 @@ gitlabRouter.post("/", (req, res) => {
 
   res.json({ ok: true });
 });
+
+export default gitlabRouter;

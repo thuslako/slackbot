@@ -1,21 +1,20 @@
 import "dotenv/config";
-import express, { json, urlencoded } from "express";
-import initSlack from "./slack";
-import { sentryRouter } from "./routes/webhooks.sentry";
-import { gitlabRouter } from "./routes/webhooks.gitlab";
-import { env } from "./env";
+import express from "express";
+import initSlack from "./slack"; 
+import webhooksSentry from "./routes/webhooks.sentry";
+import webhooksGitlab from "./routes/webhooks.gitlab";// your ExpressReceiver with endpoints /slack/events, /slack/interactive
 
 const app = express();
-
-// Webhooks
-app.use("/webhooks/sentry", sentryRouter, json(), urlencoded({ extended: true }));
-app.use("/webhooks/gitlab", gitlabRouter, json(), urlencoded({ extended: true }));
-
 initSlack(app);
 
+app.use("/webhooks", express.json(), express.urlencoded({ extended: true }));
+
+app.post("/webhooks/sentry", webhooksSentry);
+
+app.post("/webhooks/gitlab", webhooksGitlab);
+
+app.get("/", (_req, res) => res.send("ok"));
 app.get("/healthz", (_req, res) => res.send("ok"));
 
-app.listen(env.PORT, () => {
-  console.log(`Listening on :${env.PORT}`);
-});
-
+const port = Number(process.env.PORT || 3000);
+app.listen(port, () => console.log(`Listening on :${port}`));

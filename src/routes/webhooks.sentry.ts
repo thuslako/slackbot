@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { addEvent } from "../store";
 import { env } from "../env";
-export const sentryRouter = Router();
+const sentryRouter = Router();
 
 function verify(req: any) {
   if (!env.SENTRY_WEBHOOK_SECRET) return true; // skip if not set
@@ -32,3 +32,5 @@ sentryRouter.post("/", (req, res) => {
 
   res.json({ ok: true });
 });
+
+export default sentryRouter;
