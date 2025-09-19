@@ -1,11 +1,9 @@
 services:
   - type: web
     name: on-call-bot
-    env: node
     plan: starter # free will sleep; starter keeps it awake
     region: oregon # or frankfurt if your team is EU-based
     runtime: node # Render’s Node environment
-    nodeVersion: 20
     buildCommand: |
       corepack enable
       corepack prepare yarn@latest --activate
@@ -17,5 +15,13 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 10000 # Render will override this; safe default
+      - key: SLACK_BOT_TOKEN
+        sync: false
+      - key: SLACK_SIGNING_SECRET
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: SENTRY_WEBHOOK_SECRET
+        sync: false
+      - key: GITLAB_WEBHOOK_SECRET
+        sync: false
