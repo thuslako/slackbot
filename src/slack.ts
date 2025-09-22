@@ -5,7 +5,7 @@ import { getEvents } from "./store";
 import type { SlackCommandMiddlewareArgs } from "@slack/bolt";
 import OpenAI from "openai";
 import { Client } from "@modelcontextprotocol/sdk/client";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio";
 
 
 const parseSinceToMinutes = (text: string, defaultMinutes = 120): number => {
