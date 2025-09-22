@@ -4,6 +4,8 @@ import { env } from "./env";
 import { getEvents } from "./store";
 import type { SlackCommandMiddlewareArgs } from "@slack/bolt";
 import OpenAI from "openai";
+import { Client } from "@modelcontextprotocol/sdk/client";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio";
 
 
 const parseSinceToMinutes = (text: string, defaultMinutes = 120): number => {
@@ -58,6 +60,43 @@ const initSlack = (app: Express) => {
 
   const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
 
+  // Minimal MCP client manager for GitLab and Sentry
+  const mcpClients: Record<string, Client | undefined> = {};
+  const ensureMcpClient = async (
+    key: "gitlab" | "sentry" | "slack"
+  ): Promise<Client> => {
+    if (mcpClients[key]) return mcpClients[key] as Client;
+    const command = process.execPath; // node executable
+    const script = key === "gitlab"
+      ? "dist/mcp/gitlab.js"
+      : key === "sentry"
+      ? "dist/mcp/sentry.js"
+      : "dist/mcp/slack.js";
+    const args = [script];
+    const extraEnv: Record<string, string> = key === "gitlab"
+      ? {
+          GITLAB_TOKEN: String(process.env.GITLAB_TOKEN || ""),
+          GITLAB_HOST: String(process.env.GITLAB_HOST || "https://gitlab.com")
+        }
+      : key === "sentry" ? {
+          SENTRY_TOKEN: String(process.env.SENTRY_TOKEN || ""),
+          SENTRY_HOST: String(process.env.SENTRY_HOST || "https://sentry.io"),
+          SENTRY_ORG: String(process.env.SENTRY_ORG || "")
+        } : {
+          SLACK_BOT_TOKEN: String(process.env.SLACK_BOT_TOKEN || "")
+        };
+    const transport = new StdioClientTransport({
+      command,
+      args,
+      env: { ...process.env as any, ...extraEnv },
+      stderr: "inherit"
+    });
+    const client = new Client({ name: `oncallbot-${key}-client`, version: "0.1.0" });
+    await client.connect(transport);
+    mcpClients[key] = client;
+    return client;
+  };
+
   slack.command("/oncall", async ({ ack, respond, command }:SlackCommandMiddlewareArgs) => {
     await ack();
 
@@ -85,6 +124,143 @@ const initSlack = (app: Express) => {
       response_type: "ephemeral", // or "in_channel" if you want it visible
       text: completion.choices[0]?.message?.content ?? "No summary."
     });
+  });
+
+  // /sentry-issues project=<slug> [org=<org>] [query=...] [limit=20]
+  slack.command("/sentry-issues", async ({ ack, respond, command }: SlackCommandMiddlewareArgs) => {
+    await ack();
+    const text = (command.text || "").trim();
+    const args: Record<string, string> = {};
+    for (const part of text.split(/\s+/).filter(Boolean)) {
+      const idx = part.indexOf("=");
+      if (idx > 0) args[part.slice(0, idx)] = part.slice(idx + 1);
+      else if (!args.project) args.project = part;
+    }
+    if (!args.project) {
+      await respond({ response_type: "ephemeral", text: "Usage: /sentry-issues project=<slug> [org=<org>] [query=...] [limit=20]" });
+      return;
+    }
+    try {
+      const client = await ensureMcpClient("sentry");
+      const result = await client.callTool({
+        name: "sentry_list_issues",
+        arguments: {
+          project: args.project,
+          org: args.org,
+          query: args.query,
+          limit: args.limit ? Number(args.limit) : undefined
+        }
+      }, undefined, { timeout: 20000 });
+      const contentAny: any = (result as any).content || [];
+      const textOut = (Array.isArray(contentAny) ? contentAny : [])
+        .map((c: any) => (c?.type === "text" ? c.text : ""))
+        .join("\n");
+      await respond({ response_type: "ephemeral", text: textOut.slice(0, 3500) || "No results." });
+    } catch (err: any) {
+      await respond({ response_type: "ephemeral", text: `Error: ${err?.message || String(err)}` });
+    }
+  });
+
+  // /gitlab-mrs <projectIdOrPath> [state]
+  slack.command("/gitlab-mrs", async ({ ack, respond, command }: SlackCommandMiddlewareArgs) => {
+    await ack();
+    const parts = (command.text || "").trim().split(/\s+/).filter(Boolean);
+    const projectId = parts[0];
+    const state = parts[1];
+    if (!projectId) {
+      await respond({ response_type: "ephemeral", text: "Usage: /gitlab-mrs <projectIdOrPath> [state]" });
+      return;
+    }
+    try {
+      const client = await ensureMcpClient("gitlab");
+      const result = await client.callTool({
+        name: "gitlab_list_mrs",
+        arguments: { projectId, state }
+      }, undefined, { timeout: 20000 });
+      const contentAny: any = (result as any).content || [];
+      const textOut = (Array.isArray(contentAny) ? contentAny : [])
+        .map((c: any) => (c?.type === "text" ? c.text : ""))
+        .join("\n");
+      await respond({ response_type: "ephemeral", text: textOut.slice(0, 3500) || "No results." });
+    } catch (err: any) {
+      await respond({ response_type: "ephemeral", text: `Error: ${err?.message || String(err)}` });
+    }
+  });
+
+  // /oncall-report project=<gitlabProject> sentry=<sentryProject> [org=<org>] [channel=<name>] [keywords=...] [limit=20]
+  slack.command("/oncall-report", async ({ ack, respond, command }: SlackCommandMiddlewareArgs) => {
+    await ack();
+    const text = (command.text || "").trim();
+    const args: Record<string, string> = {};
+    for (const part of text.split(/\s+/).filter(Boolean)) {
+      const i = part.indexOf("=");
+      if (i > 0) args[part.slice(0, i)] = part.slice(i + 1);
+    }
+
+    const glProject = args.project;
+    const seProject = args.sentry || args.sentryProject;
+    const org = args.org;
+    const channel = args.channel;
+    const keywords = args.keywords || "incident OR error OR outage";
+    const limit = args.limit ? Number(args.limit) : 20;
+
+    try {
+      // Fetch GitLab MRs
+      let gitlabText = "";
+      if (glProject) {
+        const gl = await ensureMcpClient("gitlab");
+        const glRes = await gl.callTool({ name: "gitlab_list_mrs", arguments: { projectId: glProject, state: "opened" } }, undefined, { timeout: 20000 });
+        const glContent: any = (glRes as any).content || [];
+        gitlabText = (Array.isArray(glContent) ? glContent : []).map((c: any) => (c?.type === "text" ? c.text : "")).join("\n");
+        if (gitlabText.length > 8000) gitlabText = gitlabText.slice(0, 8000);
+      }
+
+      // Fetch Sentry issues
+      let sentryText = "";
+      if (seProject || org) {
+        const se = await ensureMcpClient("sentry");
+        const seRes = await se.callTool({
+          name: "sentry_list_issues",
+          arguments: { project: seProject || "", org, limit, query: "is:unresolved" }
+        }, undefined, { timeout: 20000 });
+        const seContent: any = (seRes as any).content || [];
+        sentryText = (Array.isArray(seContent) ? seContent : []).map((c: any) => (c?.type === "text" ? c.text : "")).join("\n");
+        if (sentryText.length > 8000) sentryText = sentryText.slice(0, 8000);
+      }
+
+      // Search Slack channel (optional)
+      let slackSearchText = "";
+      if (channel) {
+        const sk = await ensureMcpClient("slack");
+        const skRes = await sk.callTool({ name: "slack_search_channel", arguments: { channel, keywords } }, undefined, { timeout: 20000 });
+        const skContent: any = (skRes as any).content || [];
+        slackSearchText = (Array.isArray(skContent) ? skContent : []).map((c: any) => (c?.type === "text" ? c.text : "")).join("\n");
+        if (slackSearchText.length > 8000) slackSearchText = slackSearchText.slice(0, 8000);
+      }
+
+      // Compose report prompt
+      const reportPrompt = [
+        "You are an SRE copilot. Create a concise on-call report.",
+        "Summarize unresolved Sentry issues, current GitLab open MRs, and notable Sentry, GitLab, and Slack messages.",
+        "Return Slack-friendly bullets, emojis, risks, and include URLs when present.",
+        "GitLab MRs JSON:",
+        gitlabText || "[]",
+        "\nSentry Issues JSON:",
+        sentryText || "[]",
+        "\nSlack Messages JSON:",
+        slackSearchText || "[]"
+      ].join("\n");
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4.1-mini",
+        temperature: 0.2,
+        messages: [{ role: "user", content: reportPrompt }]
+      });
+
+      await respond({ response_type: "ephemeral", text: completion.choices[0]?.message?.content ?? "No summary." });
+    } catch (err: any) {
+      await respond({ response_type: "ephemeral", text: `Error: ${err?.message || String(err)}` });
+    }
   });
 
   // Mount Bolt’s Express app onto our server
