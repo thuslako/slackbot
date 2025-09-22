@@ -8,7 +8,7 @@ const env_1 = require("./env");
 const store_1 = require("./store");
 const openai_1 = __importDefault(require("openai"));
 const client_1 = require("@modelcontextprotocol/sdk/client");
-const stdio_1 = require("@modelcontextprotocol/sdk/client/stdio");
+const stdio_js_1 = require("@modelcontextprotocol/sdk/client/stdio.js");
 const parseSinceToMinutes = (text, defaultMinutes = 120) => {
     // Accepts: since 30m | 2h | 1w (also “mins/min/minute/minutes”, “hr/hrs/hour/hours”, “wk/wks/week/weeks”)
     // Case-insensitive, ignores extra spaces. First match wins.
@@ -72,7 +72,7 @@ const initSlack = (app) => {
             } : {
                 SLACK_BOT_TOKEN: String(process.env.SLACK_BOT_TOKEN || "")
             };
-        const transport = new stdio_1.StdioClientTransport({
+        const transport = new stdio_js_1.StdioClientTransport({
             command,
             args,
             env: { ...process.env, ...extraEnv },

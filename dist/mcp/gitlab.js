@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-const mcp_1 = require("@modelcontextprotocol/sdk/server/mcp");
-const stdio_1 = require("@modelcontextprotocol/sdk/server/stdio");
+const mcp_js_1 = require("@modelcontextprotocol/sdk/server/mcp.js");
+const stdio_js_1 = require("@modelcontextprotocol/sdk/server/stdio.js");
 const GITLAB_HOST = process.env.GITLAB_HOST || "https://gitlab.com";
 const GITLAB_TOKEN = process.env.GITLAB_TOKEN || "";
 async function gl(path, init) {
@@ -17,7 +17,7 @@ async function gl(path, init) {
     });
     return res;
 }
-const server = new mcp_1.McpServer({ name: "gitlab-mcp", version: "0.1.0" });
+const server = new mcp_js_1.McpServer({ name: "gitlab-mcp", version: "0.1.0" });
 server.tool("gitlab_list_issues", "List issues for a project. Args: { projectId, state? }", async (extra) => {
     const args = extra?.request?.params?.arguments || {};
     const projectId = String(args.projectId || "");
@@ -79,5 +79,5 @@ server.tool("gitlab_get_comments", "Get comments from a merge request. Args: { p
     return { content: [{ type: "text", text }] };
 });
 // Start stdio transport
-const transport = new stdio_1.StdioServerTransport();
+const transport = new stdio_js_1.StdioServerTransport();
 server.connect(transport);

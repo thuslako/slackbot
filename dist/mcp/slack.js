@@ -1,14 +1,14 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-const mcp_1 = require("@modelcontextprotocol/sdk/server/mcp");
-const stdio_1 = require("@modelcontextprotocol/sdk/server/stdio");
+const mcp_js_1 = require("@modelcontextprotocol/sdk/server/mcp.js");
+const stdio_js_1 = require("@modelcontextprotocol/sdk/server/stdio.js");
 const web_api_1 = require("@slack/web-api");
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN || "";
 if (!SLACK_BOT_TOKEN) {
     // Allow process to start; tool calls will error if token missing
 }
 const slack = new web_api_1.WebClient(SLACK_BOT_TOKEN);
-const server = new mcp_1.McpServer({ name: "slack-mcp", version: "0.1.0" });
+const server = new mcp_js_1.McpServer({ name: "slack-mcp", version: "0.1.0" });
 server.tool("slack_list_channels", "List public channels. Args: { limit? }", async (extra) => {
     const args = extra?.request?.params?.arguments || {};
     const limit = args.limit ? Number(args.limit) : 50;
@@ -59,5 +59,5 @@ server.tool("slack_search_channel", "Search for keywords in a channel. Args: { c
     const res = await slack.search.messages({ query });
     return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
 });
-const transport = new stdio_1.StdioServerTransport();
+const transport = new stdio_js_1.StdioServerTransport();
 server.connect(transport);

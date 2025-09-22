@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-const mcp_1 = require("@modelcontextprotocol/sdk/server/mcp");
-const stdio_1 = require("@modelcontextprotocol/sdk/server/stdio");
+const mcp_js_1 = require("@modelcontextprotocol/sdk/server/mcp.js");
+const stdio_js_1 = require("@modelcontextprotocol/sdk/server/stdio.js");
 const SENTRY_HOST = process.env.SENTRY_HOST || "https://sentry.io";
 const SENTRY_TOKEN = process.env.SENTRY_TOKEN || "";
 const DEFAULT_ORG = process.env.SENTRY_ORG;
@@ -22,7 +22,7 @@ async function sentry(path, init) {
     });
     return res;
 }
-const server = new mcp_1.McpServer({ name: "sentry-mcp", version: "0.1.0" });
+const server = new mcp_js_1.McpServer({ name: "sentry-mcp", version: "0.1.0" });
 // List projects in an organization
 server.tool("sentry_list_projects", "List Sentry projects. Args: { org? } (falls back to env SENTRY_ORG)", async (extra) => {
     const args = extra?.request?.params?.arguments || {};
@@ -122,5 +122,5 @@ server.tool("sentry_issue_events", "List events for an issue. Args: { issueId: s
     return { content: [{ type: "text", text }] };
 });
 // Start stdio transport
-const transport = new stdio_1.StdioServerTransport();
+const transport = new stdio_js_1.StdioServerTransport();
 server.connect(transport);
