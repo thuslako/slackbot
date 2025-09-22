@@ -13,10 +13,11 @@
     },
     "slash_commands": [
       {
-        "command": "/oncall",
+        "command": "/oncall-report",
         "description": "Summarize recent incidents, tickets, MRs, and Slack messages from on-call with AI",
         "usage_hint": "[since 30m|2h|1w|today|project:api]",
-        "should_escape": false
+        "should_escape": false,
+        "url": "https://on-call-bot.onrender.com/slack/events"
       }
     ]
   },

@@ -5,7 +5,7 @@ import { getEvents } from "./store";
 import type { SlackCommandMiddlewareArgs } from "@slack/bolt";
 import OpenAI from "openai";
 import { Client } from "@modelcontextprotocol/sdk/client";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 
 const parseSinceToMinutes = (text: string, defaultMinutes = 120): number => {
@@ -254,6 +254,7 @@ const initSlack = (app: Express) => {
         "You are an SRE copilot. Create a concise on-call report.",
         "Summarize unresolved Sentry issues across the organization for the specified environment and time range, correlate with GitLab open MRs (optionally filtered by source branch), and highlight notable Slack messages.",
         "Return Slack-friendly bullets, emojis, risks, and include URLs when present.",
+        "Sorted by backend and frontend issues, the most critical issues  that affect the most users.",
         "GitLab MRs JSON:",
         gitlabText || "[]",
         "\nSentry Issues JSON:",
@@ -263,7 +264,7 @@ const initSlack = (app: Express) => {
       ].join("\n");
 
       const completion = await openai.chat.completions.create({
-        model: "gpt-4.1-mini",
+        model: "gpt-5",
         temperature: 0.2,
         messages: [{ role: "user", content: reportPrompt }]
       });
