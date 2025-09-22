@@ -45,6 +45,15 @@ server.tool(
     return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
   });
 
+server.tool("slack_search", "Search workspace messages. Args: { query, count? }", async (extra: any) => {
+  const args = (extra?.request?.params as any)?.arguments || {};
+  const query = String(args.query || "");
+  const count = args.count ? Number(args.count) : 20;
+  if (!query) return { content: [{ type: "text", text: "Missing query" }] };
+  const res = await slack.search.messages({ query, count });
+  return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+});
+
   server.tool("slack_search_channel", "Search for keywords in a channel. Args: { channel, keywords }", async (extra: any) => {
     const args = (extra?.request?.params as any)?.arguments || {};
     const channel = String(args.channel || "");

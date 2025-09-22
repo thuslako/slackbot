@@ -45,15 +45,36 @@ server.tool("gitlab_create_issue", "Create issue. Args: { projectId, title, desc
     const text = await res.text();
     return { content: [{ type: "text", text }] };
 });
-server.tool("gitlab_list_mrs", "List merge requests. Args: { projectId, state? }", async (extra) => {
+server.tool("gitlab_list_mrs", "List merge requests. Args: { projectId, state?, sourceBranch?, updatedAfter? }", async (extra) => {
     const args = extra?.request?.params?.arguments || {};
     const projectId = String(args.projectId || "");
     const state = args.state ? String(args.state) : undefined;
+    const sourceBranch = args.sourceBranch ? String(args.sourceBranch) : undefined;
+    const updatedAfter = args.updatedAfter ? String(args.updatedAfter) : undefined; // ISO
     if (!projectId) {
         return { content: [{ type: "text", text: "Missing projectId" }] };
     }
-    const q = state ? `&state=${encodeURIComponent(state)}` : "";
-    const res = await gl(`/projects/${encodeURIComponent(projectId)}/merge_requests?per_page=20${q}`);
+    const params = new URLSearchParams();
+    params.set("per_page", "20");
+    if (state)
+        params.set("state", state);
+    if (sourceBranch)
+        params.set("source_branch", sourceBranch);
+    if (updatedAfter)
+        params.set("updated_after", updatedAfter);
+    const res = await gl(`/projects/${encodeURIComponent(projectId)}/merge_requests?${params.toString()}`);
+    const text = await res.text();
+    return { content: [{ type: "text", text }] };
+});
+//get comments from a merge request
+server.tool("gitlab_get_comments", "Get comments from a merge request. Args: { projectId, mergeRequestId }", async (extra) => {
+    const args = extra?.request?.params?.arguments || {};
+    const projectId = String(args.projectId || "");
+    const mergeRequestId = String(args.mergeRequestId || "");
+    if (!projectId || !mergeRequestId) {
+        return { content: [{ type: "text", text: "Missing projectId or mergeRequestId" }] };
+    }
+    const res = await gl(`/projects/${encodeURIComponent(projectId)}/merge_requests/${encodeURIComponent(mergeRequestId)}/comments`);
     const text = await res.text();
     return { content: [{ type: "text", text }] };
 });

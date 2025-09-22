@@ -187,46 +187,57 @@ const initSlack = (app: Express) => {
     }
   });
 
-  // /oncall-report project=<gitlabProject> sentry=<sentryProject> [org=<org>] [channel=<name>] [keywords=...] [limit=20]
+  // /oncall-report <timeRange> [branch=<sourceBranch>] [env=<sentryEnv>] [channel=<name>] [keywords=...]
   slack.command("/oncall-report", async ({ ack, respond, command }: SlackCommandMiddlewareArgs) => {
     await ack();
     const text = (command.text || "").trim();
-    const args: Record<string, string> = {};
-    for (const part of text.split(/\s+/).filter(Boolean)) {
+    const tokens = text.split(/\s+/).filter(Boolean);
+    const timeRange = tokens[0] || "2h"; // e.g., 30m, 2h, 1d
+    const kv: Record<string, string> = {};
+    for (const part of tokens.slice(1)) {
       const i = part.indexOf("=");
-      if (i > 0) args[part.slice(0, i)] = part.slice(i + 1);
+      if (i > 0) kv[part.slice(0, i)] = part.slice(i + 1);
     }
-
-    const glProject = args.project;
-    const seProject = args.sentry || args.sentryProject;
-    const org = args.org;
-    const channel = args.channel;
-    const keywords = args.keywords || "incident OR error OR outage";
-    const limit = args.limit ? Number(args.limit) : 20;
+    const sourceBranch = kv.branch;
+    const environment = kv.env || "production";
+    const channel = kv.channel;
+    const keywords = kv.keywords || "incident OR error OR outage";
 
     try {
-      // Fetch GitLab MRs
+      // Time window params
+      const statsPeriod = /^(\d+)(m|h|d|w)$/.test(timeRange) ? timeRange : "2h";
+      const sinceIso = undefined;
+      const untilIso = undefined;
+
+      // GitLab MRs across specified project (optional): if you have a default project, set env.GITLAB_PROJECT
       let gitlabText = "";
-      if (glProject) {
+      const defaultProject = process.env.GITLAB_PROJECT;
+      if (defaultProject) {
         const gl = await ensureMcpClient("gitlab");
-        const glRes = await gl.callTool({ name: "gitlab_list_mrs", arguments: { projectId: glProject, state: "opened" } }, undefined, { timeout: 20000 });
+        const glRes = await gl.callTool({
+          name: "gitlab_list_mrs",
+          arguments: {
+            projectId: defaultProject,
+            state: "opened",
+            sourceBranch,
+            updatedAfter: undefined
+          }
+        }, undefined, { timeout: 20000 });
         const glContent: any = (glRes as any).content || [];
         gitlabText = (Array.isArray(glContent) ? glContent : []).map((c: any) => (c?.type === "text" ? c.text : "")).join("\n");
         if (gitlabText.length > 8000) gitlabText = gitlabText.slice(0, 8000);
       }
 
-      // Fetch Sentry issues
+      // Sentry issues across org
       let sentryText = "";
-      if (seProject || org) {
-        const se = await ensureMcpClient("sentry");
-        const seRes = await se.callTool({
-          name: "sentry_list_issues",
-          arguments: { project: seProject || "", org, limit, query: "is:unresolved" }
-        }, undefined, { timeout: 20000 });
-        const seContent: any = (seRes as any).content || [];
-        sentryText = (Array.isArray(seContent) ? seContent : []).map((c: any) => (c?.type === "text" ? c.text : "")).join("\n");
-        if (sentryText.length > 8000) sentryText = sentryText.slice(0, 8000);
-      }
+      const se = await ensureMcpClient("sentry");
+      const seRes = await se.callTool({
+        name: "sentry_list_issues_org",
+        arguments: { org: env.SENTRY_ORG, environment, statsPeriod, since: sinceIso, until: untilIso, limitPerProject: 20 }
+      }, undefined, { timeout: 25000 });
+      const seContent: any = (seRes as any).content || [];
+      sentryText = (Array.isArray(seContent) ? seContent : []).map((c: any) => (c?.type === "text" ? c.text : "")).join("\n");
+      if (sentryText.length > 16000) sentryText = sentryText.slice(0, 16000);
 
       // Search Slack channel (optional)
       let slackSearchText = "";
@@ -241,7 +252,7 @@ const initSlack = (app: Express) => {
       // Compose report prompt
       const reportPrompt = [
         "You are an SRE copilot. Create a concise on-call report.",
-        "Summarize unresolved Sentry issues, current GitLab open MRs, and notable Sentry, GitLab, and Slack messages.",
+        "Summarize unresolved Sentry issues across the organization for the specified environment and time range, correlate with GitLab open MRs (optionally filtered by source branch), and highlight notable Slack messages.",
         "Return Slack-friendly bullets, emojis, risks, and include URLs when present.",
         "GitLab MRs JSON:",
         gitlabText || "[]",

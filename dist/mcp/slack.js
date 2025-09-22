@@ -40,6 +40,15 @@ server.tool("slack_post_message", "Post a message. Args: { channel, text }", asy
     const res = await slack.chat.postMessage({ channel, text });
     return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
 });
+server.tool("slack_search", "Search workspace messages. Args: { query, count? }", async (extra) => {
+    const args = extra?.request?.params?.arguments || {};
+    const query = String(args.query || "");
+    const count = args.count ? Number(args.count) : 20;
+    if (!query)
+        return { content: [{ type: "text", text: "Missing query" }] };
+    const res = await slack.search.messages({ query, count });
+    return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+});
 server.tool("slack_search_channel", "Search for keywords in a channel. Args: { channel, keywords }", async (extra) => {
     const args = extra?.request?.params?.arguments || {};
     const channel = String(args.channel || "");

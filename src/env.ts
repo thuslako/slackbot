@@ -9,6 +9,7 @@ const envSchema = z.object({
   SENTRY_HOST: z.string().optional(),
   SENTRY_ORG: z.string().optional(),
   SENTRY_TOKEN: z.string().optional(),
+  SENTRY_PROJECTS: z.string().optional(),
   GITLAB_HOST: z.string().optional(),
   GITLAB_TOKEN: z.string().optional(),
   GITLAB_WEBHOOK_SECRET: z.string().optional()
