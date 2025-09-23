@@ -90,7 +90,7 @@ server.tool(
     const statsPeriod = args.statsPeriod ? String(args.statsPeriod) : undefined;
     const since = args.since ? String(args.since) : undefined;
     const until = args.until ? String(args.until) : undefined;
-    const limitPerProject = args.limitPerProject ? Number(args.limitPerProject) : 20;
+    const limitPerProject = Math.min(args.limitPerProject ? Number(args.limitPerProject) : 20, 50); // Cap at 50 to prevent token overflow
     if (!org) return { content: [{ type: "text", text: "Missing org" }] };
     const projectsRes = await sentry(`/organizations/${encodeURIComponent(org)}/projects/?per_page=100`);
     const projectsText = await projectsRes.text();
@@ -101,7 +101,10 @@ server.tool(
       projects = projects.filter((p: any) => allow.has(String(p?.slug || "")));
     }
     const results: Record<string, any> = {};
-    for (const p of projects) {
+    const maxProjects = 10; // Limit to prevent token overflow
+    const projectsToProcess = projects.slice(0, maxProjects);
+
+    for (const p of projectsToProcess) {
       const slug = p?.slug;
       if (!slug) continue;
       const q = new URLSearchParams();
@@ -126,7 +129,7 @@ server.tool(
     const args = (extra?.request?.params as any)?.arguments || {};
     const org = String(args.org || DEFAULT_ORG || "");
     const statsPeriod = "14d";
-    const limitPerProject = args.limitPerProject ? Number(args.limitPerProject) : 20;
+    const limitPerProject = Math.min(args.limitPerProject ? Number(args.limitPerProject) : 20, 50); // Cap at 50 to prevent token overflow
     if (!org) return { content: [{ type: "text", text: "Missing org" }] };
 
     try {

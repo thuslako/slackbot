@@ -321,8 +321,8 @@ const initSlack = (app: Express) => {
         console.error(`[correlation] error: ${err}`);
       }
 
-      // Compose detailed report prompt
-      const reportPrompt = [
+      // Compose detailed report prompt with token limit safeguards
+      const basePrompt = [
         "You are an SRE copilot called depthCart 💣. Create a detailed on-call report with the following structure:",
         "",
         "## Critical Issues Requiring Attention",
@@ -339,13 +339,44 @@ const initSlack = (app: Express) => {
         "- Issues being tracked in Slack",
         "- Overall system health assessment",
         "",
-        "Use markdown, emojis, bullets, and include all relevant URLs. Be concise but comprehensive.",
+        "Use markdown, emojis, bullets, and include all relevant URLs. Be concise but comprehensive."
+      ].join("\n");
+
+      // Estimate tokens and truncate if needed (rough estimation: 1 token ≈ 4 characters)
+      const MAX_TOKENS = 120000;
+      const sentryTextTokens = Math.ceil(sentryText.length / 4);
+      const correlationsTextTokens = Math.ceil(JSON.stringify(issueCorrelations, null, 2).length / 4);
+      const basePromptTokens = Math.ceil(basePrompt.length / 4);
+
+      let finalSentryText = sentryText;
+      let finalCorrelationsText = JSON.stringify(issueCorrelations, null, 2);
+
+      if (sentryTextTokens + correlationsTextTokens + basePromptTokens > MAX_TOKENS) {
+        console.log(`[token-limit] Total estimated tokens: ${sentryTextTokens + correlationsTextTokens + basePromptTokens}, limiting...`);
+
+        // If Sentry data is too large, truncate it
+        if (sentryTextTokens > 50000) {
+          const maxSentryLength = 50000 * 4; // 50k tokens worth of characters
+          finalSentryText = sentryText.slice(0, maxSentryLength) + "\n... (truncated for token limit)";
+          console.log(`[token-limit] Truncated Sentry data from ${sentryText.length} to ${finalSentryText.length} characters`);
+        }
+
+        // If correlations are too large, truncate the JSON
+        if (correlationsTextTokens > 30000) {
+          const maxCorrelationsLength = 30000 * 4; // 30k tokens worth of characters
+          finalCorrelationsText = JSON.stringify(issueCorrelations.slice(0, 10), null, 2) + "\n... (showing first 10 correlations only)";
+          console.log(`[token-limit] Truncated correlations from ${issueCorrelations.length} to 10 items`);
+        }
+      }
+
+      const reportPrompt = [
+        basePrompt,
         "",
         "Sentry Issues JSON (filtered to requested time range):",
-        sentryText,
+        finalSentryText,
         "",
         "Issue Correlations JSON:",
-        JSON.stringify(issueCorrelations, null, 2)
+        finalCorrelationsText
       ].join("\n");
 
       const completion = await openai.chat.completions.create({
