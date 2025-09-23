@@ -12,7 +12,6 @@ const envSchema = z.object({
   SENTRY_PROJECTS: z.string().optional(),
   GITLAB_HOST: z.string().optional(),
   GITLAB_TOKEN: z.string().optional(),
-  GITLAB_WEBHOOK_SECRET: z.string().optional()
 });
 
 export const env = envSchema.parse(process.env);

@@ -18,6 +18,20 @@
         "usage_hint": "[since 30m|2h|1w|today|project:api]",
         "should_escape": false,
         "url": "https://on-call-bot.onrender.com/slack/events"
+      },
+      {
+        "command": "/sentry-issues",
+        "description": "List Sentry issues",
+        "usage_hint": "project=<slug> [org=<org>] [query=...] [limit=20]",
+        "should_escape": false,
+        "url": "https://on-call-bot.onrender.com/slack/events"
+      },
+      {
+        "command": "/gitlab-mrs",
+        "description": "List GitLab MRs",
+        "usage_hint": "<projectIdOrPath> [state]",
+        "should_escape": false,
+        "url": "https://on-call-bot.onrender.com/slack/events"
       }
     ]
   },

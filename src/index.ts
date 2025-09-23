@@ -1,6 +1,6 @@
 import "dotenv/config";
 import express from "express";
-import initSlack from "./slack"; 
+import initSlack from "./bot"; 
 
 const app = express();
 initSlack(app);
