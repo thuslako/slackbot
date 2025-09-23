@@ -243,7 +243,7 @@ const initSlack = (app) => {
                 slackSearchText || "[]"
             ].join("\n");
             const completion = await openai.chat.completions.create({
-                model: "gpt-5",
+                model: "gpt-4.1-mini",
                 temperature: 0.2,
                 messages: [{ role: "user", content: reportPrompt }]
             });
