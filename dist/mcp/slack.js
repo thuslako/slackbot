@@ -49,6 +49,23 @@ server.tool("slack_search", "Search workspace messages. Args: { query, count? }"
     const res = await slack.search.messages({ query, count });
     return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
 });
+// Track ticket in Slack channel
+server.tool("slack_track_ticket", "Track ticket in Slack channel. Args: { ticketId, ticketType, issueTitle, channel }", async (extra) => {
+    const args = extra?.request?.params?.arguments || {};
+    const ticketId = String(args.ticketId || "");
+    const ticketType = String(args.ticketType || "issue");
+    const issueTitle = String(args.issueTitle || "");
+    const channel = String(args.channel || "#incidents");
+    if (!ticketId || !issueTitle)
+        return { content: [{ type: "text", text: "Missing ticketId or issueTitle" }] };
+    const message = `:rotating_light: **Ticket Tracking** :rotating_light:\n\n` +
+        `**Issue:** ${issueTitle}\n` +
+        `**${ticketType.charAt(0).toUpperCase() + ticketType.slice(1)}:** #${ticketId}\n` +
+        `**Action Required:** Please review and provide updates.\n` +
+        `**Timestamp:** ${new Date().toISOString()}`;
+    const res = await slack.chat.postMessage({ channel, text: message });
+    return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+});
 server.tool("slack_search_channel", "Search for keywords in a channel. Args: { channel, keywords }", async (extra) => {
     const args = extra?.request?.params?.arguments || {};
     const channel = String(args.channel || "");

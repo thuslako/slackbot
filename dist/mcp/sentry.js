@@ -110,6 +110,48 @@ server.tool("sentry_list_issues_org", "List issues across all projects. Args: { 
     }
     return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
 });
+// List issues by time range (simplified version)
+server.tool("sentry_list_issues_time_range", "List issues by time range. Args: { org?, statsPeriod?, limitPerProject? }", async (extra) => {
+    const args = extra?.request?.params?.arguments || {};
+    const org = String(args.org || DEFAULT_ORG || "");
+    const statsPeriod = args.statsPeriod ? String(args.statsPeriod) : "2h";
+    const limitPerProject = args.limitPerProject ? Number(args.limitPerProject) : 20;
+    if (!org)
+        return { content: [{ type: "text", text: "Missing org" }] };
+    const projectsRes = await sentry(`/organizations/${encodeURIComponent(org)}/projects/?per_page=200`);
+    const projectsText = await projectsRes.text();
+    let projects = [];
+    try {
+        projects = JSON.parse(projectsText);
+    }
+    catch { /* keep empty */ }
+    if (PROJECT_FILTER.length > 0) {
+        const allow = new Set(PROJECT_FILTER);
+        projects = projects.filter((p) => allow.has(String(p?.slug || "")));
+    }
+    const results = {};
+    for (const p of projects) {
+        const slug = p?.slug;
+        if (!slug)
+            continue;
+        const q = new URLSearchParams();
+        q.set("per_page", String(limitPerProject));
+        q.set("statsPeriod", statsPeriod);
+        q.set("query", "is:unresolved");
+        const r = await sentry(`/projects/${encodeURIComponent(org)}/${encodeURIComponent(slug)}/issues/?${q.toString()}`);
+        const t = await r.text();
+        const issues = (() => { try {
+            return JSON.parse(t);
+        }
+        catch {
+            return [];
+        } })();
+        if (Array.isArray(issues) && issues.length > 0) {
+            results[slug] = issues;
+        }
+    }
+    return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
+});
 // List recent events for a specific issue
 server.tool("sentry_issue_events", "List events for an issue. Args: { issueId: string, limit? }", async (extra) => {
     const args = extra?.request?.params?.arguments || {};
