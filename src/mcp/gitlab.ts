@@ -96,6 +96,57 @@ server.tool(
   }
 );
 
+// Find related ticket/MR by issue title
+server.tool(
+  "gitlab_find_related_ticket",
+  "Find related ticket/MR by issue title. Args: { issueTitle: string, projectId: string }",
+  async (extra: any) => {
+    const args = (extra?.request?.params as any)?.arguments || {};
+    const issueTitle = String(args.issueTitle || "");
+    const projectId = String(args.projectId || "");
+    if (!issueTitle || !projectId) return { content: [{ type: "text", text: "Missing issueTitle or projectId" }] };
+
+    // Search issues
+    const issuesRes = await gl(`/projects/${encodeURIComponent(projectId)}/issues?search=${encodeURIComponent(issueTitle)}&per_page=5`);
+    const issuesText = await issuesRes.text();
+    let issues: any[] = [];
+    try { issues = JSON.parse(issuesText); } catch { /* keep empty */ }
+
+    // Search MRs
+    const mrsRes = await gl(`/projects/${encodeURIComponent(projectId)}/merge_requests?search=${encodeURIComponent(issueTitle)}&per_page=5`);
+    const mrsText = await mrsRes.text();
+    let mrs: any[] = [];
+    try { mrs = JSON.parse(mrsText); } catch { /* keep empty */ }
+
+    // Return the most relevant match
+    const all = [...issues, ...mrs].filter(item => item?.title?.toLowerCase().includes(issueTitle.toLowerCase().slice(0, 50)));
+    if (all.length === 0) return { content: [{ type: "text", text: "No related tickets found" }] };
+
+    const best = all[0];
+    return { content: [{ type: "text", text: JSON.stringify(best, null, 2) }] };
+  }
+);
+
+// Get comments for a ticket
+server.tool(
+  "gitlab_get_ticket_comments",
+  "Get comments for a ticket. Args: { ticketId: string, ticketType: string }",
+  async (extra: any) => {
+    const args = (extra?.request?.params as any)?.arguments || {};
+    const ticketId = String(args.ticketId || "");
+    const ticketType = String(args.ticketType || "issue"); // "issue" or "merge_request"
+    if (!ticketId) return { content: [{ type: "text", text: "Missing ticketId" }] };
+
+    const endpoint = ticketType === "merge_request" ? "merge_request" : "issue";
+    const res = await gl(`/projects/${encodeURIComponent(process.env.GITLAB_PROJECT || "")}/${endpoint}s/${ticketId}/notes?per_page=20`);
+    const text = await res.text();
+    let comments: any[] = [];
+    try { comments = JSON.parse(text); } catch { /* keep empty */ }
+
+    return { content: [{ type: "text", text: JSON.stringify(comments, null, 2) }] };
+  }
+);
+
 // Start stdio transport
 const transport = new StdioServerTransport();
 server.connect(transport);

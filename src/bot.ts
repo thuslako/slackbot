@@ -104,34 +104,7 @@ const initSlack = (app: Express) => {
     return client;
   };
 
-  slack.command("/oncall", async ({ ack, respond, command }:SlackCommandMiddlewareArgs) => {
-    await ack();
 
-    const text = (command.text || "").trim().toLowerCase();
-    
-    const minutes = parseSinceToMinutes(text, 120);
-
-    const data = getEvents(minutes);
-
-    const prompt = [
-      "You are an SRE copilot. Summarize the last",
-      `${minutes} minutes of Sentry alerts and GitLab activity.`,
-      "Group by project; call out regressions, repeating errors, failing pipelines, and risky MRs.",
-      "Return a concise, Slack-friendly report with bullets, emojis, and include URLs when present.",
-      `Data JSON:\n${JSON.stringify(data, null, 2)}`
-    ].join(" ");
-
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4.1-mini",
-      temperature: 0.2,
-      messages: [{ role: "user", content: prompt }]
-    });
-
-    await respond({
-      response_type: "ephemeral", // or "in_channel" if you want it visible
-      text: completion.choices[0]?.message?.content ?? "No summary."
-    });
-  });
 
   // /sentry-issues project=<slug> [org=<org>] [query=...] [limit=20]
   slack.command("/sentry-issues", async ({ ack, respond, command }: SlackCommandMiddlewareArgs) => {
@@ -194,95 +167,116 @@ const initSlack = (app: Express) => {
     }
   });
 
-  // /oncall-report <timeRange> [branch=<sourceBranch>] [env=<sentryEnv>] [channel=<name>] [keywords=...]
+  // /oncall-report <timeRange>
   slack.command("/oncall-report", async ({ ack, respond, command }: SlackCommandMiddlewareArgs) => {
     await ack();
     const text = (command.text || "").trim();
     console.log(`/oncall-report invoked: "${text}" by ${command.user_id}`);
-    const tokens = text.split(/\s+/).filter(Boolean);
-    const timeRange = tokens[0] || "2h"; // e.g., 30m, 2h, 1d
-    const kv: Record<string, string> = {};
-    for (const part of tokens.slice(1)) {
-      const i = part.indexOf("=");
-      if (i > 0) kv[part.slice(0, i)] = part.slice(i + 1);
-    }
-    const sourceBranch = kv.branch;
-    const environment = kv.env || "production";
-    const channel = kv.channel;
-    const keywords = kv.keywords || "incident OR error OR outage";
-    console.log(`/oncall-report parsed: timeRange=${timeRange}, sourceBranch=${sourceBranch}, environment=${environment}, channel=${channel}, keywords=${keywords}`);
+    const timeRange = text || "1w"; // e.g., 30m, 2h, 1d
+    console.log(`/oncall-report parsed: timeRange=${timeRange}`);
 
     try {
       // Time window params
       const statsPeriod = /^(\d+)(m|h|d|w)$/.test(timeRange) ? timeRange : "2h";
-      const sinceIso = undefined;
-      const untilIso = undefined;
 
-      // GitLab MRs across specified project (optional): if you have a default project, set env.GITLAB_PROJECT
-      let gitlabText = "";
-      const defaultProject = process.env.GITLAB_PROJECT;
-      if (defaultProject) {
-        console.log(`[mcp] calling gitlab_list_mrs with projectId=${defaultProject}, state=opened, sourceBranch=${sourceBranch}`);
-        const t0 = Date.now();
-        const gl = await ensureMcpClient("gitlab");
-        const glRes = await gl.callTool({
-          name: "gitlab_list_mrs",
-          arguments: {
-            projectId: defaultProject,
-            state: "opened",
-            sourceBranch,
-            updatedAfter: undefined
-          }
-        }, undefined, { timeout: 20000 });
-        const glContent: any = (glRes as any).content || [];
-        gitlabText = (Array.isArray(glContent) ? glContent : []).map((c: any) => (c?.type === "text" ? c.text : "")).join("\n");
-        console.log(`[mcp] gitlab_list_mrs done in ${Date.now()-t0}ms, response bytes=${JSON.stringify(glRes).length}, parsed length=${gitlabText.length}`);
-        if (gitlabText.length > 8000) gitlabText = gitlabText.slice(0, 8000);
-      } else {
-        console.log(`[mcp] skipping gitlab_list_mrs (no GITLAB_PROJECT env)`);
-      }
-
-      // Sentry issues across org
-      let sentryText = "";
-      console.log(`[mcp] calling sentry_list_issues_org with org=${env.SENTRY_ORG}, environment=${environment}, statsPeriod=${statsPeriod}`);
+      // Get Sentry issues for the time range
+      console.log(`[mcp] calling sentry_list_issues_time_range with org=${env.SENTRY_ORG}, statsPeriod=${statsPeriod}`);
       const t0 = Date.now();
       const se = await ensureMcpClient("sentry");
       const seRes = await se.callTool({
-        name: "sentry_list_issues_org",
-        arguments: { org: env.SENTRY_ORG, environment, statsPeriod, since: sinceIso, until: untilIso, limitPerProject: 20 }
-      }, undefined, { timeout: 25000 });
+        name: "sentry_list_issues_time_range",
+        arguments: { org: env.SENTRY_ORG, statsPeriod, limitPerProject: 50 }
+      }, undefined, { timeout: 30000 });
       const seContent: any = (seRes as any).content || [];
-      sentryText = (Array.isArray(seContent) ? seContent : []).map((c: any) => (c?.type === "text" ? c.text : "")).join("\n");
-      console.log(`[mcp] sentry_list_issues_org done in ${Date.now()-t0}ms, response bytes=${JSON.stringify(seRes).length}, parsed length=${sentryText.length}`);
-      if (sentryText.length > 16000) sentryText = sentryText.slice(0, 16000);
+      const sentryText = (Array.isArray(seContent) ? seContent : []).map((c: any) => (c?.type === "text" ? c.text : "")).join("\n");
+      console.log(`[mcp] sentry_list_issues_time_range done in ${Date.now()-t0}ms, response bytes=${JSON.stringify(seRes).length}, parsed length=${sentryText.length}`);
 
-      // Search Slack channel (optional)
-      let slackSearchText = "";
-      if (channel) {
-        console.log(`[mcp] calling slack_search_channel with channel=${channel}, keywords=${keywords}`);
-        const t0 = Date.now();
-        const sk = await ensureMcpClient("slack");
-        const skRes = await sk.callTool({ name: "slack_search_channel", arguments: { channel, keywords } }, undefined, { timeout: 20000 });
-        const skContent: any = (skRes as any).content || [];
-        slackSearchText = (Array.isArray(skContent) ? skContent : []).map((c: any) => (c?.type === "text" ? c.text : "")).join("\n");
-        console.log(`[mcp] slack_search_channel done in ${Date.now()-t0}ms, response bytes=${JSON.stringify(skRes).length}, parsed length=${slackSearchText.length}`);
-        if (slackSearchText.length > 8000) slackSearchText = slackSearchText.slice(0, 8000);
-      } else {
-        console.log(`[mcp] skipping slack_search_channel (no channel provided)`);
+      // For each Sentry issue, find related GitLab tickets and track in Slack
+      let issueCorrelations = [];
+      try {
+        const sentryIssues = JSON.parse(sentryText);
+        issueCorrelations = [];
+
+        for (const [projectSlug, issues] of Object.entries(sentryIssues as Record<string, any[]>)) {
+          for (const issue of issues) {
+            console.log(`[correlation] processing Sentry issue: ${issue.title} (${issue.id})`);
+
+            // Find related GitLab ticket
+            const gl = await ensureMcpClient("gitlab");
+            const glRes = await gl.callTool({
+              name: "gitlab_find_related_ticket",
+              arguments: { issueTitle: issue.title, projectId: process.env.GITLAB_PROJECT }
+            }, undefined, { timeout: 15000 });
+            const glContent: any = (glRes as any).content || [];
+            const gitlabTicket = (Array.isArray(glContent) ? glContent : []).find((c: any) => c?.type === "text" && c.text);
+
+            if (gitlabTicket) {
+              console.log(`[correlation] found GitLab ticket: ${gitlabTicket}`);
+
+              // Get GitLab ticket comments
+              const glCommentsRes = await gl.callTool({
+                name: "gitlab_get_ticket_comments",
+                arguments: { ticketId: gitlabTicket.id, ticketType: gitlabTicket.type }
+              }, undefined, { timeout: 15000 });
+              const glCommentsContent: any = (glCommentsRes as any).content || [];
+              const comments = (Array.isArray(glCommentsContent) ? glCommentsContent : []).map((c: any) => (c?.type === "text" ? c.text : "")).join("\n");
+
+              // Track in Slack
+              const sk = await ensureMcpClient("slack");
+              const skRes = await sk.callTool({
+                name: "slack_track_ticket",
+                arguments: {
+                  ticketId: gitlabTicket.id,
+                  ticketType: gitlabTicket.type,
+                  issueTitle: issue.title,
+                  channel: "#incidents"
+                }
+              }, undefined, { timeout: 10000 });
+              const skContent: any = (skRes as any).content || [];
+              const trackingResult = (Array.isArray(skContent) ? skContent : []).map((c: any) => (c?.type === "text" ? c.text : "")).join("\n");
+
+              issueCorrelations.push({
+                sentryIssue: issue,
+                gitlabTicket: gitlabTicket,
+                comments: comments,
+                slackTracking: trackingResult
+              });
+            } else {
+              console.log(`[correlation] no GitLab ticket found for: ${issue.title}`);
+            }
+          }
+        }
+
+        console.log(`[correlation] processed ${issueCorrelations.length} issue correlations`);
+      } catch (err) {
+        console.error(`[correlation] error: ${err}`);
       }
 
-      // Compose report prompt
+      // Compose detailed report prompt
       const reportPrompt = [
-        "You are an SRE copilot. Create a concise on-call report.",
-        "Summarize unresolved Sentry issues across the organization for the specified environment and time range, correlate with GitLab open MRs (optionally filtered by source branch), and highlight notable Slack messages.",
-        "Return Slack-friendly bullets, animal emojis, risks, and include URLs when present.",
-        "Sorted by backend and frontend issues, the most critical issues  that affect the most users.",
-        "GitLab MRs JSON:",
-        gitlabText || "[]",
-        "\nSentry Issues JSON:",
-        sentryText || "[]",
-        "\nSlack Messages JSON:",
-        slackSearchText || "[]"
+        "You are an SRE copilot. Create a detailed on-call report with the following structure:",
+        "",
+        "## Critical Issues Requiring Attention",
+        "- For each critical Sentry issue, include:",
+        "  - Issue title and URL",
+        "  - Related GitLab ticket/MR if found",
+        "  - Latest comments from GitLab",
+        "  - Slack tracking status",
+        "  - Severity and impact assessment",
+        "",
+        "## Recent Activity Summary",
+        "- Total issues found in time range",
+        "- Issues with GitLab correlation",
+        "- Issues being tracked in Slack",
+        "- Overall system health assessment",
+        "",
+        "Use emojis, bullets, and include all relevant URLs. Be concise but comprehensive.",
+        "",
+        "Sentry Issues JSON:",
+        sentryText,
+        "",
+        "Issue Correlations JSON:",
+        JSON.stringify(issueCorrelations, null, 2)
       ].join("\n");
 
       const completion = await openai.chat.completions.create({
@@ -291,8 +285,9 @@ const initSlack = (app: Express) => {
         messages: [{ role: "user", content: reportPrompt }]
       });
 
-      await respond({ response_type: "ephemeral", text: completion.choices[0]?.message?.content ?? "No summary." });
+      await respond({ response_type: "ephemeral", text: completion.choices[0]?.message?.content ?? "No summary generated." });
     } catch (err: any) {
+      console.error(`[oncall-report] error: ${err}`);
       await respond({ response_type: "ephemeral", text: `Error: ${err?.message || String(err)}` });
     }
   });
