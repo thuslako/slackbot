@@ -173,53 +173,71 @@ const initSlack = (app) => {
             const seContent = seRes.content || [];
             const sentryText = (Array.isArray(seContent) ? seContent : []).map((c) => (c?.type === "text" ? c.text : "")).join("\n");
             console.log(`[mcp] sentry_list_issues_time_range done in ${Date.now() - t0}ms, response bytes=${JSON.stringify(seRes).length}, parsed length=${sentryText.length}`);
+            // Handle case where sentryText is not valid JSON or is an error message
+            let sentryIssues = {};
+            try {
+                sentryIssues = JSON.parse(sentryText);
+                if (typeof sentryIssues !== 'object' || Array.isArray(sentryIssues)) {
+                    console.error(`[bot] sentry response is not an object: ${typeof sentryIssues}`);
+                    sentryIssues = {};
+                }
+            }
+            catch (e) {
+                console.error(`[bot] failed to parse sentry response as JSON: ${e}`);
+                console.error(`[bot] sentry response text: ${sentryText}`);
+                sentryIssues = {};
+            }
             // For each Sentry issue, find related GitLab tickets and track in Slack
             let issueCorrelations = [];
             try {
-                const sentryIssues = JSON.parse(sentryText);
                 issueCorrelations = [];
-                for (const [projectSlug, issues] of Object.entries(sentryIssues)) {
-                    for (const issue of issues) {
-                        console.log(`[correlation] processing Sentry issue: ${issue.title} (${issue.id})`);
-                        // Find related GitLab ticket
-                        const gl = await ensureMcpClient("gitlab");
-                        const glRes = await gl.callTool({
-                            name: "gitlab_find_related_ticket",
-                            arguments: { issueTitle: issue.title, projectId: process.env.GITLAB_PROJECT }
-                        }, undefined, { timeout: 15000 });
-                        const glContent = glRes.content || [];
-                        const gitlabTicket = (Array.isArray(glContent) ? glContent : []).find((c) => c?.type === "text" && c.text);
-                        if (gitlabTicket) {
-                            console.log(`[correlation] found GitLab ticket: ${gitlabTicket}`);
-                            // Get GitLab ticket comments
-                            const glCommentsRes = await gl.callTool({
-                                name: "gitlab_get_ticket_comments",
-                                arguments: { ticketId: gitlabTicket.id, ticketType: gitlabTicket.type }
+                if (!sentryIssues || Object.keys(sentryIssues).length === 0) {
+                    console.log(`[correlation] no Sentry issues found, skipping correlation`);
+                }
+                else {
+                    for (const [projectSlug, issues] of Object.entries(sentryIssues)) {
+                        for (const issue of issues) {
+                            console.log(`[correlation] processing Sentry issue: ${issue.title} (${issue.id})`);
+                            // Find related GitLab ticket
+                            const gl = await ensureMcpClient("gitlab");
+                            const glRes = await gl.callTool({
+                                name: "gitlab_find_related_ticket",
+                                arguments: { issueTitle: issue.title, projectId: process.env.GITLAB_PROJECT }
                             }, undefined, { timeout: 15000 });
-                            const glCommentsContent = glCommentsRes.content || [];
-                            const comments = (Array.isArray(glCommentsContent) ? glCommentsContent : []).map((c) => (c?.type === "text" ? c.text : "")).join("\n");
-                            // Track in Slack
-                            const sk = await ensureMcpClient("slack");
-                            const skRes = await sk.callTool({
-                                name: "slack_track_ticket",
-                                arguments: {
-                                    ticketId: gitlabTicket.id,
-                                    ticketType: gitlabTicket.type,
-                                    issueTitle: issue.title,
-                                    channel: "#incidents"
-                                }
-                            }, undefined, { timeout: 10000 });
-                            const skContent = skRes.content || [];
-                            const trackingResult = (Array.isArray(skContent) ? skContent : []).map((c) => (c?.type === "text" ? c.text : "")).join("\n");
-                            issueCorrelations.push({
-                                sentryIssue: issue,
-                                gitlabTicket: gitlabTicket,
-                                comments: comments,
-                                slackTracking: trackingResult
-                            });
-                        }
-                        else {
-                            console.log(`[correlation] no GitLab ticket found for: ${issue.title}`);
+                            const glContent = glRes.content || [];
+                            const gitlabTicket = (Array.isArray(glContent) ? glContent : []).find((c) => c?.type === "text" && c.text);
+                            if (gitlabTicket) {
+                                console.log(`[correlation] found GitLab ticket: ${gitlabTicket}`);
+                                // Get GitLab ticket comments
+                                const glCommentsRes = await gl.callTool({
+                                    name: "gitlab_get_ticket_comments",
+                                    arguments: { ticketId: gitlabTicket.id, ticketType: gitlabTicket.type }
+                                }, undefined, { timeout: 15000 });
+                                const glCommentsContent = glCommentsRes.content || [];
+                                const comments = (Array.isArray(glCommentsContent) ? glCommentsContent : []).map((c) => (c?.type === "text" ? c.text : "")).join("\n");
+                                // Track in Slack
+                                const sk = await ensureMcpClient("slack");
+                                const skRes = await sk.callTool({
+                                    name: "slack_track_ticket",
+                                    arguments: {
+                                        ticketId: gitlabTicket.id,
+                                        ticketType: gitlabTicket.type,
+                                        issueTitle: issue.title,
+                                        channel: "#incidents"
+                                    }
+                                }, undefined, { timeout: 10000 });
+                                const skContent = skRes.content || [];
+                                const trackingResult = (Array.isArray(skContent) ? skContent : []).map((c) => (c?.type === "text" ? c.text : "")).join("\n");
+                                issueCorrelations.push({
+                                    sentryIssue: issue,
+                                    gitlabTicket: gitlabTicket,
+                                    comments: comments,
+                                    slackTracking: trackingResult
+                                });
+                            }
+                            else {
+                                console.log(`[correlation] no GitLab ticket found for: ${issue.title}`);
+                            }
                         }
                     }
                 }
