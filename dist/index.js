@@ -5,9 +5,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 require("dotenv/config");
 const express_1 = __importDefault(require("express"));
-const slack_1 = __importDefault(require("./slack"));
+const bot_1 = __importDefault(require("./bot"));
 const app = (0, express_1.default)();
-(0, slack_1.default)(app);
+(0, bot_1.default)(app);
 app.get("/", (_req, res) => res.send("ok"));
 app.get("/healthz", (_req, res) => res.send("ok"));
 const port = Number(process.env.PORT || 3000);
