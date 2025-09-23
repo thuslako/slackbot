@@ -85,7 +85,7 @@ server.tool("sentry_list_issues_org", "List issues across all projects. Args: { 
     const limitPerProject = args.limitPerProject ? Number(args.limitPerProject) : 20;
     if (!org)
         return { content: [{ type: "text", text: "Missing org" }] };
-    const projectsRes = await sentry(`/organizations/${encodeURIComponent(org)}/projects/?per_page=200`);
+    const projectsRes = await sentry(`/organizations/${encodeURIComponent(org)}/projects/?per_page=100`);
     const projectsText = await projectsRes.text();
     let projects = [];
     try {
@@ -131,7 +131,7 @@ server.tool("sentry_list_issues_time_range", "List issues by time range. Args: {
     if (!org)
         return { content: [{ type: "text", text: "Missing org" }] };
     try {
-        const projectsRes = await sentry(`/organizations/${encodeURIComponent(org)}/projects/?per_page=200`);
+        const projectsRes = await sentry(`/organizations/${encodeURIComponent(org)}/projects/?per_page=100`);
         if (!projectsRes.ok) {
             const errorText = await projectsRes.text();
             console.error(`[sentry] projects API error ${projectsRes.status}: ${errorText}`);
