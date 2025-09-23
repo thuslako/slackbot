@@ -76,6 +76,43 @@ const initSlack = (app) => {
         logLevel: bolt_1.LogLevel.DEBUG
     });
     const openai = new openai_1.default({ apiKey: env_1.env.OPENAI_API_KEY });
+    const dataCache = {};
+    // Check if cache is valid (not older than 1 day and not older than requested time range)
+    const isCacheValid = (cacheKey, requestedTimeRange) => {
+        const entry = dataCache[cacheKey];
+        if (!entry)
+            return false;
+        const now = Date.now();
+        const oneDay = 24 * 60 * 60 * 1000; // 24 hours in ms
+        // Cache is invalid if older than 1 day
+        if (now - entry.timestamp > oneDay) {
+            console.log(`[cache] ${cacheKey} expired (older than 1 day)`);
+            return false;
+        }
+        // Cache is invalid if requested time range is more recent than cached time range
+        const requestedMs = getTimeRangeMs(requestedTimeRange);
+        const cachedMs = getTimeRangeMs(entry.timeRange);
+        if (requestedMs < cachedMs) {
+            console.log(`[cache] ${cacheKey} invalid (requested ${requestedTimeRange} is more recent than cached ${entry.timeRange})`);
+            return false;
+        }
+        console.log(`[cache] ${cacheKey} valid (cached ${entry.timeRange}, requested ${requestedTimeRange})`);
+        return true;
+    };
+    const getTimeRangeMs = (timeRange) => {
+        const match = timeRange.match(/^(\d+)([mhdw])$/);
+        if (!match)
+            return 24 * 60 * 60 * 1000; // Default to 1 day
+        const value = parseInt(match[1], 10);
+        const unit = match[2];
+        switch (unit) {
+            case 'm': return value * 60 * 1000;
+            case 'h': return value * 60 * 60 * 1000;
+            case 'd': return value * 24 * 60 * 60 * 1000;
+            case 'w': return value * 7 * 24 * 60 * 60 * 1000;
+            default: return 24 * 60 * 60 * 1000;
+        }
+    };
     // Minimal MCP client manager for GitLab and Sentry
     const mcpClients = {};
     const ensureMcpClient = async (key) => {
@@ -190,30 +227,47 @@ const initSlack = (app) => {
         try {
             // Time window params
             const statsPeriod = /^(\d+)(m|h|d|w)$/.test(timeRange) ? timeRange : "7d";
-            // Get Sentry issues for the time range
-            console.log(`[mcp] calling sentry_list_issues_time_range with org=${env_1.env.SENTRY_ORG}, statsPeriod=${statsPeriod}`);
-            const t0 = Date.now();
-            const se = await ensureMcpClient("sentry");
-            const seRes = await se.callTool({
-                name: "sentry_list_issues_time_range",
-                arguments: { org: env_1.env.SENTRY_ORG, statsPeriod, limitPerProject: 50 }
-            }, undefined, { timeout: 30000 });
-            const seContent = seRes.content || [];
-            const sentryText = (Array.isArray(seContent) ? seContent : []).map((c) => (c?.type === "text" ? c.text : "")).join("\n");
-            console.log(`[mcp] sentry_list_issues_time_range done in ${Date.now() - t0}ms, response bytes=${JSON.stringify(seRes).length}, parsed length=${sentryText.length}`);
-            // Handle case where sentryText is not valid JSON or is an error message
+            // Get Sentry issues for the time range (with caching)
+            const cacheKey = `sentry-${env_1.env.SENTRY_ORG}-${timeRange}`;
             let sentryIssues = {};
-            try {
-                sentryIssues = JSON.parse(sentryText);
-                if (typeof sentryIssues !== 'object' || Array.isArray(sentryIssues)) {
-                    console.error(`[bot] sentry response is not an object: ${typeof sentryIssues}`);
+            if (isCacheValid(cacheKey, timeRange)) {
+                sentryIssues = dataCache[cacheKey].data;
+                console.log(`[cache] using cached Sentry data for ${timeRange}`);
+            }
+            else {
+                console.log(`[cache] cache miss or invalid for ${cacheKey}, making fresh API call`);
+                console.log(`[mcp] calling sentry_list_issues_time_range with org=${env_1.env.SENTRY_ORG}, statsPeriod=${statsPeriod}`);
+                const t0 = Date.now();
+                const se = await ensureMcpClient("sentry");
+                const seRes = await se.callTool({
+                    name: "sentry_list_issues_time_range",
+                    arguments: { org: env_1.env.SENTRY_ORG, statsPeriod, limitPerProject: 50 }
+                }, undefined, { timeout: 30000 });
+                const seContent = seRes.content || [];
+                const sentryText = (Array.isArray(seContent) ? seContent : []).map((c) => (c?.type === "text" ? c.text : "")).join("\n");
+                console.log(`[mcp] sentry_list_issues_time_range done in ${Date.now() - t0}ms, response bytes=${JSON.stringify(seRes).length}, parsed length=${sentryText.length}`);
+                // Handle case where sentryText is not valid JSON or is an error message
+                try {
+                    sentryIssues = JSON.parse(sentryText);
+                    if (typeof sentryIssues !== 'object' || Array.isArray(sentryIssues)) {
+                        console.error(`[bot] sentry response is not an object: ${typeof sentryIssues}`);
+                        sentryIssues = {};
+                    }
+                    else {
+                        // Cache the successful result
+                        dataCache[cacheKey] = {
+                            data: sentryIssues,
+                            timestamp: Date.now(),
+                            timeRange: timeRange
+                        };
+                        console.log(`[cache] stored Sentry data for ${timeRange} (cached ${Object.keys(sentryIssues).length} projects)`);
+                    }
+                }
+                catch (e) {
+                    console.error(`[bot] failed to parse sentry response as JSON: ${e}`);
+                    console.error(`[bot] sentry response text: ${sentryText}`);
                     sentryIssues = {};
                 }
-            }
-            catch (e) {
-                console.error(`[bot] failed to parse sentry response as JSON: ${e}`);
-                console.error(`[bot] sentry response text: ${sentryText}`);
-                sentryIssues = {};
             }
             // Filter Sentry issues to the requested time range
             if (sentryIssues && Object.keys(sentryIssues).length > 0) {
@@ -290,8 +344,8 @@ const initSlack = (app) => {
             catch (err) {
                 console.error(`[correlation] error: ${err}`);
             }
-            // Compose detailed report prompt
-            const reportPrompt = [
+            // Compose detailed report prompt with token limit safeguards
+            const basePrompt = [
                 "You are an SRE copilot called depthCart 💣. Create a detailed on-call report with the following structure:",
                 "",
                 "## Critical Issues Requiring Attention",
@@ -308,13 +362,39 @@ const initSlack = (app) => {
                 "- Issues being tracked in Slack",
                 "- Overall system health assessment",
                 "",
-                "Use markdown, emojis, bullets, and include all relevant URLs. Be concise but comprehensive.",
+                "Use markdown, emojis, bullets, and include all relevant URLs. Be concise but comprehensive."
+            ].join("\n");
+            // Estimate tokens and truncate if needed (rough estimation: 1 token ≈ 4 characters)
+            const MAX_TOKENS = 120000;
+            const sentryJson = JSON.stringify(sentryIssues, null, 2);
+            const sentryTextTokens = Math.ceil(sentryJson.length / 4);
+            const correlationsTextTokens = Math.ceil(JSON.stringify(issueCorrelations, null, 2).length / 4);
+            const basePromptTokens = Math.ceil(basePrompt.length / 4);
+            let finalSentryJson = sentryJson;
+            let finalCorrelationsText = JSON.stringify(issueCorrelations, null, 2);
+            if (sentryTextTokens + correlationsTextTokens + basePromptTokens > MAX_TOKENS) {
+                console.log(`[token-limit] Total estimated tokens: ${sentryTextTokens + correlationsTextTokens + basePromptTokens}, limiting...`);
+                // If Sentry data is too large, truncate it
+                if (sentryTextTokens > 50000) {
+                    const maxSentryLength = 50000 * 4; // 50k tokens worth of characters
+                    finalSentryJson = sentryJson.slice(0, maxSentryLength) + "\n... (truncated for token limit)";
+                    console.log(`[token-limit] Truncated Sentry data from ${sentryJson.length} to ${finalSentryJson.length} characters`);
+                }
+                // If correlations are too large, truncate the JSON
+                if (correlationsTextTokens > 30000) {
+                    const maxCorrelationsLength = 30000 * 4; // 30k tokens worth of characters
+                    finalCorrelationsText = JSON.stringify(issueCorrelations.slice(0, 10), null, 2) + "\n... (showing first 10 correlations only)";
+                    console.log(`[token-limit] Truncated correlations from ${issueCorrelations.length} to 10 items`);
+                }
+            }
+            const reportPrompt = [
+                basePrompt,
                 "",
                 "Sentry Issues JSON (filtered to requested time range):",
-                sentryText,
+                finalSentryJson,
                 "",
                 "Issue Correlations JSON:",
-                JSON.stringify(issueCorrelations, null, 2)
+                finalCorrelationsText
             ].join("\n");
             const completion = await openai.chat.completions.create({
                 model: "gpt-4.1-mini",
@@ -327,6 +407,14 @@ const initSlack = (app) => {
             console.error(`[oncall-report] error: ${err}`);
             await respond({ response_type: "ephemeral", text: `Error: ${err?.message || String(err)}` });
         }
+    });
+    // /clear-cache - Clear all cached data
+    slack.command("/clear-cache", async ({ ack, respond, command }) => {
+        await ack();
+        const cacheSize = Object.keys(dataCache).length;
+        Object.keys(dataCache).forEach(key => delete dataCache[key]); // Clear the cache
+        console.log(`[cache] cleared ${cacheSize} cached entries`);
+        await respond({ response_type: "ephemeral", text: `✅ Cleared ${cacheSize} cached entries` });
     });
     // Mount Bolt’s Express app onto our server
     app.use(receiver.app);
