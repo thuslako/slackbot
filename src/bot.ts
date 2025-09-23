@@ -9,12 +9,12 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 
 
 const parseSinceToMinutes = (text: string, defaultMinutes = 120): number => {
-    // Accepts: since 30m | 2h | 1w (also “mins/min/minute/minutes”, “hr/hrs/hour/hours”, “wk/wks/week/weeks”)
+    // Accepts: since 30m | 2h | 1w (also "mins/min/minute/minutes", "hr/hrs/hour/hours", "wk/wks/week/weeks")
     // Case-insensitive, ignores extra spaces. First match wins.
     const m = text.toLowerCase().match(
       /since\s+(\d+)\s*(m|min|mins|minute|minutes|h|hr|hrs|hour|hours|w|wk|wks|week|weeks)\b/
     );
-  
+
     if (!m) {
       // special case: "since today"
       if (/since\s+today\b/i.test(text)) {
@@ -29,12 +29,12 @@ const parseSinceToMinutes = (text: string, defaultMinutes = 120): number => {
       }
       return defaultMinutes;
     }
-  
+
     const value = parseInt(m[1], 10);
     const unit = m[2];
-  
+
     if (Number.isNaN(value) || value < 0) return defaultMinutes;
-  
+
     // Convert to minutes
     const toMinutes = (u: string) => {
       if (/(^m$|^min$|^mins$|^minute$|^minutes$)/.test(u)) return value;
@@ -42,9 +42,42 @@ const parseSinceToMinutes = (text: string, defaultMinutes = 120): number => {
       if (/(^w$|^wk$|^wks$|^week$|^weeks$)/.test(u)) return value * 7 * 24 * 60;
       return value; // fallback (shouldn’t hit)
     };
-  
+
     return toMinutes(unit);
   }
+
+const getCutoffTime = (timeRange: string): number => {
+  const now = Date.now();
+  const match = timeRange.match(/^(\d+)([mhdw])$/);
+
+  if (!match) {
+    // Default to 1 week if invalid format
+    return now - (7 * 24 * 60 * 60 * 1000);
+  }
+
+  const value = parseInt(match[1], 10);
+  const unit = match[2];
+
+  let milliseconds = 0;
+  switch (unit) {
+    case 'm':
+      milliseconds = value * 60 * 1000;
+      break;
+    case 'h':
+      milliseconds = value * 60 * 60 * 1000;
+      break;
+    case 'd':
+      milliseconds = value * 24 * 60 * 60 * 1000;
+      break;
+    case 'w':
+      milliseconds = value * 7 * 24 * 60 * 60 * 1000;
+      break;
+    default:
+      milliseconds = 7 * 24 * 60 * 60 * 1000; // default to 1 week
+  }
+
+  return now - milliseconds;
+}
   
 
 const initSlack = (app: Express) => {
@@ -177,7 +210,7 @@ const initSlack = (app: Express) => {
 
     try {
       // Time window params
-      const statsPeriod = /^(\d+)(m|h|d|w)$/.test(timeRange) ? timeRange : "2h";
+      const statsPeriod = /^(\d+)(m|h|d|w)$/.test(timeRange) ? timeRange : "7d";
 
       // Get Sentry issues for the time range
       console.log(`[mcp] calling sentry_list_issues_time_range with org=${env.SENTRY_ORG}, statsPeriod=${statsPeriod}`);
@@ -203,6 +236,25 @@ const initSlack = (app: Express) => {
         console.error(`[bot] failed to parse sentry response as JSON: ${e}`);
         console.error(`[bot] sentry response text: ${sentryText}`);
         sentryIssues = {};
+      }
+
+      // Filter Sentry issues to the requested time range
+      if (sentryIssues && Object.keys(sentryIssues).length > 0) {
+        const cutoffTime = getCutoffTime(timeRange);
+        const filteredIssues: Record<string, any[]> = {};
+
+        for (const [projectSlug, issues] of Object.entries(sentryIssues as Record<string, any[]>)) {
+          const filtered = issues.filter(issue => {
+            const issueTime = new Date(issue.lastSeen || issue.firstSeen || 0).getTime();
+            return issueTime >= cutoffTime;
+          });
+          if (filtered.length > 0) {
+            filteredIssues[projectSlug] = filtered;
+          }
+        }
+
+        sentryIssues = filteredIssues;
+        console.log(`[bot] filtered Sentry issues: ${Object.keys(sentryIssues).length} projects, ${Object.values(sentryIssues).flat().length} total issues within ${timeRange}`);
       }
 
       // For each Sentry issue, find related GitLab tickets and track in Slack
@@ -271,7 +323,7 @@ const initSlack = (app: Express) => {
 
       // Compose detailed report prompt
       const reportPrompt = [
-        "You are an SRE copilot. Create a detailed on-call report with the following structure:",
+        "You are an SRE copilot called depthCart 💣. Create a detailed on-call report with the following structure:",
         "",
         "## Critical Issues Requiring Attention",
         "- For each critical Sentry issue, include:",
@@ -282,14 +334,14 @@ const initSlack = (app: Express) => {
         "  - Severity and impact assessment",
         "",
         "## Recent Activity Summary",
-        "- Total issues found in time range",
+        `- Total issues found in ${timeRange} time range (filtered from 14d Sentry data)`,
         "- Issues with GitLab correlation",
         "- Issues being tracked in Slack",
         "- Overall system health assessment",
         "",
-        "Use emojis, bullets, and include all relevant URLs. Be concise but comprehensive.",
+        "Use markdown, emojis, bullets, and include all relevant URLs. Be concise but comprehensive.",
         "",
-        "Sentry Issues JSON:",
+        "Sentry Issues JSON (filtered to requested time range):",
         sentryText,
         "",
         "Issue Correlations JSON:",

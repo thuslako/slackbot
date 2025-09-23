@@ -125,7 +125,7 @@ server.tool(
   async (extra: any) => {
     const args = (extra?.request?.params as any)?.arguments || {};
     const org = String(args.org || DEFAULT_ORG || "");
-    const statsPeriod = args.statsPeriod ? String(args.statsPeriod) : "2h";
+    const statsPeriod = "14d";
     const limitPerProject = args.limitPerProject ? Number(args.limitPerProject) : 20;
     if (!org) return { content: [{ type: "text", text: "Missing org" }] };
 

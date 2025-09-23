@@ -126,7 +126,7 @@ server.tool("sentry_list_issues_org", "List issues across all projects. Args: { 
 server.tool("sentry_list_issues_time_range", "List issues by time range. Args: { org?, statsPeriod?, limitPerProject? }", async (extra) => {
     const args = extra?.request?.params?.arguments || {};
     const org = String(args.org || DEFAULT_ORG || "");
-    const statsPeriod = args.statsPeriod ? String(args.statsPeriod) : "2h";
+    const statsPeriod = "14d";
     const limitPerProject = args.limitPerProject ? Number(args.limitPerProject) : 20;
     if (!org)
         return { content: [{ type: "text", text: "Missing org" }] };
