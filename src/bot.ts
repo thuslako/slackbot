@@ -390,15 +390,20 @@ const initSlack = (app: Express) => {
 
       // Compose detailed report prompt with token limit safeguards
       const basePrompt = [
-        "You are an SRE copilot called depthCart 💣. Create a detailed on-call report with the following structure:",
+        "You are an SRE copilot called depthCart 💣. Create a detailed on-call report with the following EXACT structure:",
         "",
         "## Critical Issues Requiring Attention",
-        "- For each critical Sentry issue, include:",
-        "  - Issue title and URL",
-        "  - Related GitLab ticket/MR if found",
-        "  - Latest comments from GitLab",
-        "  - Slack tracking status",
-        "  - Severity and impact assessment",
+        "",
+        "For each critical issue, use this EXACT format:",
+        "### 1. [Issue Title and Link]",
+        "- **GitLab Ticket/MR:** [Link or 'None found']",
+        "- **Latest GitLab Comments:** [Comments or 'None']",
+        "- **Slack Tracking Status:** [Status or 'Not tracked']",
+        "- **Severity & Impact:**",
+        "  - **Priority:** [High/Medium/Low]",
+        "  - **Impact:** [Brief description of impact]",
+        "",
+        "IMPORTANT: Do NOT add extra emojis, separators (---), or modify the structure. Follow the exact format above.",
         "",
         "## Recent Activity Summary",
         `- Total issues found in ${timeRange} time range (filtered from 14d Sentry data)`,
@@ -406,7 +411,7 @@ const initSlack = (app: Express) => {
         "- Issues being tracked in Slack",
         "- Overall system health assessment",
         "",
-        "Use markdown, emojis, bullets, and include all relevant URLs. Be concise but comprehensive."
+        "Use markdown, emojis, bullets, and include all relevant URLs. Be concise but comprehensive. DO NOT DEVIATE FROM THE SPECIFIED FORMAT."
       ].join("\n");
 
       // Estimate tokens and truncate if needed (rough estimation: 1 token ≈ 4 characters)
@@ -443,9 +448,27 @@ const initSlack = (app: Express) => {
         "Sentry Issues JSON (filtered to requested time range):",
         finalSentryJson,
         "",
-        "Issue Correlations JSON:",
-        finalCorrelationsText
+        "Issue Correlations JSON (matches between Sentry issues and GitLab tickets):",
+        finalCorrelationsText,
+        "",
+        "INSTRUCTIONS:",
+        "- Analyze ALL Sentry Issues in the JSON to identify critical issues (focus on unresolved issues with recent activity)",
+        "- Use the Issue Correlations JSON to find related GitLab tickets, comments, and Slack tracking",
+        "- For issues WITHOUT correlations, use 'None found', 'None', and 'Not tracked'",
+        "- Include 3-5 most critical issues in the report",
+        "- Determine priority based on: frequency, recency, error type, and potential impact",
+        "- Format EXACTLY as specified above - no extra emojis, separators, or modifications",
+        "- Keep each issue description to 2-3 sentences maximum"
       ].join("\n");
+
+      // Fallback for no Sentry data
+      if (!sentryIssues || Object.keys(sentryIssues).length === 0) {
+        await respond({
+          response_type: "ephemeral",
+          text: `## Critical Issues Requiring Attention\n\n✅ No critical Sentry issues found in the ${timeRange} time range.\n\n## Recent Activity Summary\n- Total issues found: 0\n- Issues with GitLab correlation: 0\n- Issues being tracked in Slack: 0\n- **Overall system health assessment:** All systems appear stable with no critical alerts.`
+        });
+        return;
+      }
 
       const completion = await openai.chat.completions.create({
         model: "gpt-4.1-mini",
