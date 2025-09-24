@@ -471,7 +471,7 @@ const initSlack = (app: Express) => {
       }
 
       const completion = await openai.chat.completions.create({
-        model: "gpt-4.1-mini",
+        model: "gpt-4.1",
         temperature: 0.2,
         messages: [{ role: "user", content: reportPrompt }]
       });
